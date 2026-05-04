@@ -16,6 +16,7 @@ import { BatchUpscaylPayload } from "../../common/types/types";
 import showNotification from "../utils/show-notification";
 import { MODELS } from "../../common/models-list";
 import { copyMetadata } from "../utils/copy-metadata";
+import { enhanceDigitalArt2xFolder } from "../utils/enhance-digital-art-2x";
 
 const batchUpscayl = async (event, payload: BatchUpscaylPayload) => {
   const mainWindow = getMainWindow();
@@ -110,6 +111,15 @@ const batchUpscayl = async (event, payload: BatchUpscaylPayload) => {
     if (!failed && !stopped) {
       logit("💯 Done upscaling");
       upscayl.kill();
+      await enhanceDigitalArt2xFolder({
+        folderPath: outputFolderPath,
+        model,
+        scale,
+        customWidth,
+        saveImageAs,
+        compression,
+        logit,
+      });
       if (payload.copyMetadata) {
         logit("🏷️ Copying metadata...");
         try {

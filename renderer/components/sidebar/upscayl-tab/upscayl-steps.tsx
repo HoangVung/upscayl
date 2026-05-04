@@ -255,7 +255,7 @@ function UpscaylSteps({
         <button
           className="btn btn-secondary"
           onClick={
-            progress.length > 0 || !outputPath
+            progress.length > 0
               ? () =>
                   toast({
                     description: t(

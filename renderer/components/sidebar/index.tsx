@@ -42,6 +42,7 @@ import useUpscaylVersion from "../hooks/use-upscayl-version";
 import useTranslation from "../hooks/use-translation";
 import UpscaylLogo from "./upscayl-logo";
 import SidebarToggleButton from "./sidebar-button";
+import getDirectoryFromPath from "@common/get-directory-from-path";
 
 const Sidebar = ({
   setUpscaledImagePath,
@@ -101,6 +102,10 @@ const Sidebar = ({
     setUpscaledImagePath("");
     setUpscaledBatchFolderPath("");
     if (imagePath !== "" || batchFolderPath !== "") {
+      const resolvedOutputPath =
+        outputPath ||
+        (batchMode ? batchFolderPath : getDirectoryFromPath(imagePath));
+
       setProgress(t("APP.PROGRESS.WAIT_TITLE"));
       // Double Upscayl
       if (doubleUpscayl) {
@@ -108,7 +113,7 @@ const Sidebar = ({
           ELECTRON_COMMANDS.DOUBLE_UPSCAYL,
           {
             imagePath,
-            outputPath,
+            outputPath: resolvedOutputPath,
             model: selectedModelId,
             gpuId: gpuId.length === 0 ? null : gpuId,
             saveImageAs,
@@ -137,7 +142,7 @@ const Sidebar = ({
           ELECTRON_COMMANDS.FOLDER_UPSCAYL,
           {
             batchFolderPath,
-            outputPath,
+            outputPath: resolvedOutputPath,
             model: selectedModelId,
             gpuId: gpuId.length === 0 ? null : gpuId,
             saveImageAs,
@@ -162,7 +167,7 @@ const Sidebar = ({
         // Single Image Upscayl
         window.electron.send<ImageUpscaylPayload>(ELECTRON_COMMANDS.UPSCAYL, {
           imagePath,
-          outputPath,
+          outputPath: resolvedOutputPath,
           model: selectedModelId,
           gpuId: gpuId.length === 0 ? null : gpuId,
           saveImageAs,

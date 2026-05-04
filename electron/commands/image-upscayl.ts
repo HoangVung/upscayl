@@ -22,6 +22,7 @@ import getDirectoryFromPath from "../../common/get-directory-from-path";
 import { MODELS } from "../../common/models-list";
 import { getPlatform } from "../utils/get-device-specs";
 import { copyMetadata } from "../utils/copy-metadata";
+import { enhanceDigitalArt2x } from "../utils/enhance-digital-art-2x";
 
 const imageUpscayl = async (event, payload: ImageUpscaylPayload) => {
   const mainWindow = getMainWindow();
@@ -158,6 +159,15 @@ const imageUpscayl = async (event, payload: ImageUpscaylPayload) => {
         // Free up memory
         upscayl.kill();
         mainWindow.setProgressBar(-1);
+        await enhanceDigitalArt2x({
+          filePath: outFile,
+          model,
+          scale,
+          customWidth,
+          saveImageAs,
+          compression,
+          logit,
+        });
         if (payload.copyMetadata) {
           logit("🏷️ Copying metadata...");
           try {
