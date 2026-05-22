@@ -16,6 +16,7 @@ export type ImageUpscaylPayload = {
   ttaMode: boolean;
   copyMetadata: boolean;
   useNpu: boolean;
+  pythonPath?: string;
 };
 
 export type DoubleUpscaylPayload = {

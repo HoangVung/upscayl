@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 NPU Upscaler for Upscayl - Uses ONNX Runtime with Qualcomm QNN Execution Provider
-to leverage Snapdragon X Plus/Elite NPU for image super-resolution.
+to leverage Snapdragon NPU with Qualcomm XLSR Super-Resolution model.
 
 Requirements:
   pip install onnxruntime-qnn Pillow numpy
 
 Usage:
-  python npu_upscayl.py -i input.png -o output.png -m model.onnx -s 4 -f png
+  python npu_upscayl.py -i input.png -o output.png -m model.onnx -s 3 -f png
 """
 
 import argparse
@@ -28,6 +28,11 @@ except ImportError:
     print("Error: onnxruntime-qnn is required. Install with: pip install onnxruntime-qnn", file=sys.stderr)
     sys.exit(1)
 
+try:
+    import onnxruntime_qnn as qnn_ep
+except ImportError:
+    qnn_ep = None
+
 
 def get_available_providers():
     """List available ONNX Runtime execution providers."""
@@ -36,26 +41,47 @@ def get_available_providers():
 
 def create_session(model_path: str, use_npu: bool = True):
     """Create ONNX Runtime inference session with QNN EP (NPU) or fallback."""
+    session_options = ort.SessionOptions()
+    session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    session_options.intra_op_num_threads = os.cpu_count() or 4
+
+    if use_npu:
+        if qnn_ep is None:
+            print("Error: onnxruntime_qnn plugin package is not importable.", file=sys.stderr)
+            print("Install with: pip install onnxruntime-qnn", file=sys.stderr)
+            sys.exit(1)
+
+        ep_lib_path = qnn_ep.get_library_path()
+        backend_path = qnn_ep.get_qnn_htp_path()
+        ort.register_execution_provider_library("QNNExecutionProvider", ep_lib_path)
+
+        ep_devices = ort.get_ep_devices()
+        qnn_devices = [
+            ep_device
+            for ep_device in ep_devices
+            if ep_device.ep_name == "QNNExecutionProvider"
+        ]
+
+        if not qnn_devices:
+            available = get_available_providers()
+            print("Error: QNNExecutionProvider plugin registered, but no QNN EP device was found.", file=sys.stderr)
+            print(f"Available providers: {available}", file=sys.stderr)
+            sys.exit(1)
+
+        session_options.add_provider_for_devices(
+            qnn_devices,
+            {"backend_path": backend_path},
+        )
+        print("Using Qualcomm QNN plugin Execution Provider", file=sys.stderr)
+        print(f"QNN EP library: {ep_lib_path}", file=sys.stderr)
+        print(f"QNN HTP backend: {backend_path}", file=sys.stderr)
+        return ort.InferenceSession(model_path, sess_options=session_options)
+
     available = get_available_providers()
     print(f"Available providers: {available}", file=sys.stderr)
 
     providers = []
     provider_options = []
-
-    if use_npu and "QNNExecutionProvider" in available:
-        providers.append("QNNExecutionProvider")
-        provider_options.append({
-            "backend_path": "QnnHtp.dll",  # HTP backend for NPU
-            "htp_performance_mode": "burst",  # Max performance
-            "htp_graph_finalization_optimization_mode": "3",
-            "enable_htp_fp16_precision": "1",  # Use FP16 for speed
-        })
-        print("Using Qualcomm QNN (NPU/HTP) Execution Provider", file=sys.stderr)
-    elif use_npu:
-        print("WARNING: QNN Execution Provider not available. Falling back to CPU/GPU.", file=sys.stderr)
-        print("To enable NPU support, install: pip install onnxruntime-qnn", file=sys.stderr)
-
-    # Fallback providers
     if "DmlExecutionProvider" in available:
         providers.append("DmlExecutionProvider")
         provider_options.append({})
@@ -64,105 +90,157 @@ def create_session(model_path: str, use_npu: bool = True):
     providers.append("CPUExecutionProvider")
     provider_options.append({})
 
-    session_options = ort.SessionOptions()
-    session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    session_options.intra_op_num_threads = os.cpu_count() or 4
-
     session = ort.InferenceSession(
         model_path,
         sess_options=session_options,
         providers=providers,
-        provider_options=provider_options if len(provider_options) == len(providers) else None,
+        provider_options=provider_options,
     )
 
-    active_provider = session.get_providers()[0]
-    print(f"Active provider: {active_provider}", file=sys.stderr)
     return session
 
 
-def preprocess_image(image_path: str, tile_size: int = 0):
-    """Load and preprocess image for inference."""
-    img = Image.open(image_path).convert("RGB")
-    img_array = np.array(img).astype(np.float32) / 255.0
-    # Convert HWC -> NCHW (batch, channels, height, width)
-    img_array = np.transpose(img_array, (2, 0, 1))
-    img_array = np.expand_dims(img_array, axis=0)
-    return img_array, img.size
+def create_feather_mask(
+    size: int,
+    feather: int,
+    fade_left: bool,
+    fade_top: bool,
+    fade_right: bool,
+    fade_bottom: bool,
+) -> np.ndarray:
+    """Create a 2D blend mask that only fades edges with overlapping neighbors."""
+    if feather <= 0:
+        return np.ones((size, size, 1), dtype=np.float32)
+
+    feather = min(feather, size // 2)
+    ramp = np.ones(size, dtype=np.float32)
+    edge = np.linspace(0.0, 1.0, feather + 2, dtype=np.float32)[1:-1]
+    x_ramp = ramp.copy()
+    y_ramp = ramp.copy()
+
+    if fade_left:
+        x_ramp[:feather] = edge
+    if fade_right:
+        x_ramp[-feather:] = edge[::-1]
+    if fade_top:
+        y_ramp[:feather] = edge
+    if fade_bottom:
+        y_ramp[-feather:] = edge[::-1]
+
+    mask = np.minimum.outer(y_ramp, x_ramp)
+    return mask[:, :, None]
 
 
-def postprocess_image(output_array: np.ndarray) -> Image.Image:
-    """Convert model output back to PIL Image."""
-    # NCHW -> HWC
-    output = np.squeeze(output_array, axis=0)
-    output = np.transpose(output, (1, 2, 0))
-    # Clip and convert to uint8
-    output = np.clip(output * 255.0, 0, 255).astype(np.uint8)
-    return Image.fromarray(output)
+def upscale_image_xlsr(session, img: Image.Image, overlap: int = 32) -> Image.Image:
+    """Upscale image using XLSR model with fixed 128x128 input and 3x output (via 4x output resized)."""
+    width, height = img.size
+    
+    # Handle padding if image is smaller than 128x128
+    pad_w = max(0, 128 - width)
+    pad_h = max(0, 128 - height)
+    
+    if pad_w > 0 or pad_h > 0:
+        padded_img = Image.new("RGB", (width + pad_w, height + pad_h), (0, 0, 0))
+        padded_img.paste(img, (0, 0))
+        working_img = padded_img
+    else:
+        working_img = img
 
+    w_work, h_work = working_img.size
+    img_np = np.array(working_img) # Shape: (H, W, 3), dtype: uint8
 
-def upscale_with_tiling(session, img_array: np.ndarray, tile_size: int = 512, overlap: int = 32):
-    """Process large images in tiles to avoid OOM on NPU."""
-    input_name = session.get_inputs()[0].name
-    _, channels, height, width = img_array.shape
-
-    if tile_size <= 0 or (height <= tile_size and width <= tile_size):
-        # Process whole image
-        print("0.00%", flush=True)
-        result = session.run(None, {input_name: img_array})[0]
-        print("100.00%", flush=True)
-        return result
-
-    # Determine output scale from a small test tile
-    test_tile = img_array[:, :, :min(64, height), :min(64, width)]
-    test_out = session.run(None, {input_name: test_tile})[0]
-    scale = test_out.shape[2] // test_tile.shape[2]
-
-    out_h = height * scale
-    out_w = width * scale
-    output = np.zeros((1, channels, out_h, out_w), dtype=np.float32)
-    weight_map = np.zeros((1, 1, out_h, out_w), dtype=np.float32)
-
+    # Output scale factor is 3
+    out_w = w_work * 3
+    out_h = h_work * 3
+    
+    tile_size = 128
+    overlap = max(0, min(overlap, tile_size - 1))
     step = tile_size - overlap
-    tiles_y = max(1, (height - overlap + step - 1) // step)
-    tiles_x = max(1, (width - overlap + step - 1) // step)
-    total_tiles = tiles_y * tiles_x
+
+    # Generate coordinates
+    y_coords = list(range(0, h_work - tile_size, step))
+    if not y_coords or y_coords[-1] + tile_size < h_work:
+        y_coords.append(h_work - tile_size)
+        
+    x_coords = list(range(0, w_work - tile_size, step))
+    if not x_coords or x_coords[-1] + tile_size < w_work:
+        x_coords.append(w_work - tile_size)
+
+    out_full_w = (max(x_coords) + tile_size) * 3
+    out_full_h = (max(y_coords) + tile_size) * 3
+    output = np.zeros((out_full_h, out_full_w, 3), dtype=np.float32)
+    weight_map = np.zeros((out_full_h, out_full_w, 1), dtype=np.float32)
+    out_tile_size = tile_size * 3
+    feather = overlap * 3
+    first_y = min(y_coords)
+    first_x = min(x_coords)
+    last_y = max(y_coords)
+    last_x = max(x_coords)
+
+    input_name = session.get_inputs()[0].name
+    total_tiles = len(y_coords) * len(x_coords)
     processed = 0
 
-    for ty in range(tiles_y):
-        for tx in range(tiles_x):
-            y1 = min(ty * step, height - tile_size) if height > tile_size else 0
-            x1 = min(tx * step, width - tile_size) if width > tile_size else 0
-            y2 = min(y1 + tile_size, height)
-            x2 = min(x1 + tile_size, width)
-
-            tile = img_array[:, :, y1:y2, x1:x2]
-            tile_out = session.run(None, {input_name: tile})[0]
-
-            oy1, ox1 = y1 * scale, x1 * scale
-            oy2, ox2 = oy1 + tile_out.shape[2], ox1 + tile_out.shape[3]
-
-            output[:, :, oy1:oy2, ox1:ox2] += tile_out
-            weight_map[:, :, oy1:oy2, ox1:ox2] += 1.0
-
+    for y in y_coords:
+        for x in x_coords:
+            # Crop tile
+            tile = img_np[y:y+tile_size, x:x+tile_size, :]
+            
+            # Preprocess: HWC -> NCHW, dtype: uint8 (model input is uint8)
+            tile_input = np.transpose(tile, (2, 0, 1))
+            tile_input = np.expand_dims(tile_input, axis=0) # Shape: (1, 3, 128, 128)
+            
+            # Inference
+            tile_out = session.run(None, {input_name: tile_input})[0] # Shape: (1, 3, 512, 512), dtype: uint8
+            
+            # Postprocess: NCHW -> HWC
+            tile_out = np.squeeze(tile_out, axis=0)
+            tile_out = np.transpose(tile_out, (1, 2, 0)) # Shape: (512, 512, 3), dtype: uint8
+            
+            # Resize from 512x512 to 384x384 (scale factor 3)
+            tile_out_img = Image.fromarray(tile_out)
+            tile_out_img_3x = tile_out_img.resize((out_tile_size, out_tile_size), Image.Resampling.LANCZOS)
+            tile_out_3x = np.array(tile_out_img_3x).astype(np.float32)
+            
+            # Feather-blend into output to avoid visible tile grid seams.
+            oy, ox = y * 3, x * 3
+            tile_weight = create_feather_mask(
+                out_tile_size,
+                feather,
+                fade_left=x > first_x,
+                fade_top=y > first_y,
+                fade_right=x < last_x,
+                fade_bottom=y < last_y,
+            )
+            output[oy:oy+out_tile_size, ox:ox+out_tile_size, :] += tile_out_3x * tile_weight
+            weight_map[oy:oy+out_tile_size, ox:ox+out_tile_size, :] += tile_weight
+            
             processed += 1
             progress = (processed / total_tiles) * 100
             print(f"{progress:.2f}%", flush=True)
 
-    # Average overlapping regions
+    # Average
     weight_map = np.maximum(weight_map, 1.0)
     output /= weight_map
-
-    return output
+    output = np.clip(output, 0, 255).astype(np.uint8)
+    
+    result_img = Image.fromarray(output)
+    
+    # If padded, crop to original size * 3
+    if pad_w > 0 or pad_h > 0:
+        result_img = result_img.crop((0, 0, width * 3, height * 3))
+        
+    return result_img
 
 
 def main():
-    parser = argparse.ArgumentParser(description="NPU Image Upscaler for Upscayl")
+    parser = argparse.ArgumentParser(description="NPU Image Upscaler for Upscayl using Qualcomm XLSR")
     parser.add_argument("-i", "--input", required=True, help="Input image path")
     parser.add_argument("-o", "--output", required=True, help="Output image path")
     parser.add_argument("-m", "--model", required=True, help="ONNX model path")
-    parser.add_argument("-s", "--scale", type=int, default=4, help="Upscale factor (default: 4)")
+    parser.add_argument("-s", "--scale", type=int, default=3, help="Upscale factor (default: 3)")
     parser.add_argument("-f", "--format", default="png", choices=["png", "jpg", "webp"], help="Output format")
-    parser.add_argument("-t", "--tile-size", type=int, default=512, help="Tile size for processing (0=auto)")
+    parser.add_argument("-t", "--tile-size", type=int, default=128, help="Tile size (always 128 for XLSR)")
     parser.add_argument("-c", "--compression", type=int, default=0, help="Compression level (0-100)")
     parser.add_argument("--no-npu", action="store_true", help="Disable NPU, use CPU/GPU instead")
     parser.add_argument("--list-providers", action="store_true", help="List available execution providers and exit")
@@ -190,11 +268,10 @@ def main():
     session = create_session(args.model, use_npu=not args.no_npu)
 
     print(f"Processing: {args.input}", file=sys.stderr)
-    img_array, original_size = preprocess_image(args.input)
-    print(f"Input size: {original_size[0]}x{original_size[1]}", file=sys.stderr)
+    img = Image.open(args.input).convert("RGB")
+    print(f"Input size: {img.size[0]}x{img.size[1]}", file=sys.stderr)
 
-    output_array = upscale_with_tiling(session, img_array, tile_size=args.tile_size)
-    output_image = postprocess_image(output_array)
+    output_image = upscale_image_xlsr(session, img, overlap=16)
 
     print(f"Output size: {output_image.size[0]}x{output_image.size[1]}", file=sys.stderr)
 

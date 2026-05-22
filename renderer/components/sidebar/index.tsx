@@ -22,6 +22,7 @@ import {
   ttaModeAtom,
   copyMetadataAtom,
   useNpuAtom,
+  pythonPathAtom,
 } from "../../atoms/user-settings-atom";
 import useLogger from "../hooks/use-logger";
 import {
@@ -98,6 +99,7 @@ const Sidebar = ({
   const ttaMode = useAtomValue(ttaModeAtom);
   const [copyMetadata] = useAtom(copyMetadataAtom);
   const useNpu = useAtomValue(useNpuAtom);
+  const pythonPath = useAtomValue(pythonPathAtom);
 
   const upscaylHandler = async () => {
     logit("🔄 Resetting Upscaled Image Path");
@@ -107,6 +109,56 @@ const Sidebar = ({
       const resolvedOutputPath =
         outputPath ||
         (batchMode ? batchFolderPath : getDirectoryFromPath(imagePath));
+
+      if (useNpu) {
+        setProgress("Checking NPU environment...");
+        try {
+          const checkResult = await window.electron.invoke("check-npu-env", { pythonPath });
+          if (!checkResult.pythonExists) {
+            toast({
+              title: "NPU Execution Failed",
+              description: "Python is not installed or the path is invalid. Please configure Python Path in Settings.",
+            });
+            setProgress("");
+            return;
+          }
+          if (!checkResult.onnxruntimeExists) {
+            toast({
+              title: "NPU Execution Failed",
+              description: "onnxruntime-qnn, Pillow, or numpy is missing. Please run: pip install onnxruntime-qnn Pillow numpy",
+            });
+            setProgress("");
+            return;
+          }
+          if (!checkResult.qnnProviderExists) {
+            const providers =
+              checkResult.providers && checkResult.providers.length > 0
+                ? checkResult.providers.join(", ")
+                : "no providers reported";
+            toast({
+              title: "NPU Execution Failed",
+              description: `Python ARM64 found, but this ONNX Runtime build only exposes ${providers}. Reinstall onnxruntime-qnn in the Python environment shown in Settings.`,
+            });
+            setProgress("");
+            return;
+          }
+          if (!checkResult.modelExists) {
+            toast({
+              title: "NPU Execution Failed",
+              description: "Qualcomm XLSR model files are missing from resources/npu/models.",
+            });
+            setProgress("");
+            return;
+          }
+        } catch (err: any) {
+          toast({
+            title: "NPU Execution Failed",
+            description: `Environment check failed: ${err.message || err}`,
+          });
+          setProgress("");
+          return;
+        }
+      }
 
       setProgress(t("APP.PROGRESS.WAIT_TITLE"));
       // Double Upscayl
@@ -185,6 +237,7 @@ const Sidebar = ({
           ttaMode,
           copyMetadata,
           useNpu,
+          pythonPath,
         });
         setUserStats((prev) => ({
           ...prev,

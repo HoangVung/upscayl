@@ -25,4 +25,8 @@ const npuScriptPath = isDev
   ? resolve(join(appRootDir, "resources", "npu", "npu_upscayl.py"))
   : resolve(join(dirname(appRootDir), "npu", "npu_upscayl.py"));
 
-export { execPath, modelsPath, npuScriptPath };
+const npuModelsPath = isDev
+  ? resolve(join(appRootDir, "resources", "npu", "models"))
+  : resolve(join(dirname(appRootDir), "npu", "models"));
+
+export { execPath, modelsPath, npuScriptPath, npuModelsPath };

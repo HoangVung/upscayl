@@ -10,6 +10,7 @@ export const spawnNpuUpscayl = (
     format: string;
     tileSize: number;
     compression: string;
+    pythonPath?: string;
   },
   logit: (...args: any) => void,
 ) => {
@@ -26,14 +27,14 @@ export const spawnNpuUpscayl = (
     "-f",
     args.format,
     "-t",
-    args.tileSize ? args.tileSize.toString() : "512",
+    args.tileSize ? args.tileSize.toString() : "128", // always 128 for XLSR
     "-c",
     args.compression || "0",
   ];
 
   logit("📢 NPU Upscayl Command: ", command);
 
-  const spawnedProcess = spawn("python", command, {
+  const spawnedProcess = spawn(args.pythonPath || "python", command, {
     cwd: undefined,
     detached: false,
   });

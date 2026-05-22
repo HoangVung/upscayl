@@ -1,5 +1,5 @@
 import fs from "fs";
-import { modelsPath } from "../utils/get-resource-paths";
+import { modelsPath, npuModelsPath } from "../utils/get-resource-paths";
 import { ELECTRON_COMMANDS } from "../../common/electron-commands";
 import {
   savedCustomModelsPath,
@@ -12,7 +12,7 @@ import logit from "../utils/logit";
 import slash from "../utils/slash";
 import { spawnUpscayl } from "../utils/spawn-upscayl";
 import { spawnNpuUpscayl } from "../utils/spawn-npu-upscayl";
-import { parse } from "path";
+import { parse, join } from "path";
 import { getMainWindow } from "../main-window";
 import { ImageUpscaylPayload } from "../../common/types/types";
 import { ImageFormat } from "../types/types";
@@ -50,15 +50,19 @@ const imageUpscayl = async (event, payload: ImageUpscaylPayload) => {
   const fileNameWithExt = getFilenameFromPath(imagePath);
   const fileName = parse(fileNameWithExt).name;
 
-  const outFile =
-    outputDir +
-    slash +
-    fileName +
-    "_upscayl_" +
-    (useCustomWidth ? `${customWidth}px_` : `${scale}x_`) +
-    model +
-    "." +
-    saveImageAs;
+  const useNpu = payload.useNpu;
+  const pythonPath = payload.pythonPath;
+
+  const outFile = useNpu
+    ? outputDir + slash + fileName + "_upscayl_3x_xlsr_npu." + saveImageAs
+    : outputDir +
+      slash +
+      fileName +
+      "_upscayl_" +
+      (useCustomWidth ? `${customWidth}px_` : `${scale}x_`) +
+      model +
+      "." +
+      saveImageAs;
 
   const isDefaultModel = model in MODELS;
 
@@ -102,24 +106,17 @@ const imageUpscayl = async (event, payload: ImageUpscaylPayload) => {
         tileSize,
       }),
     );
-    const useNpu = payload.useNpu;
-
-    // Choose between NPU (Python/ONNX) and standard (upscayl-bin/ncnn) upscaling
     const upscayl = useNpu
       ? spawnNpuUpscayl(
           {
             inputPath: decodeURIComponent(imagePath),
             outputPath: outFile,
-            modelPath: (isDefaultModel
-              ? modelsPath
-              : (savedCustomModelsPath ?? modelsPath)) +
-              slash +
-              model +
-              ".onnx",
-            scale,
+            modelPath: join(npuModelsPath, "xlsr.onnx"),
+            scale: "3", // Always 3 for XLSR
             format: saveImageAs,
-            tileSize,
+            tileSize: 128, // Always 128 for XLSR
             compression,
+            pythonPath,
           },
           logit,
         )

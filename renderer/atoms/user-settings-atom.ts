@@ -1,6 +1,6 @@
 import { ImageFormat } from "@/lib/valid-formats";
 import { ModelId } from "@common/models-list";
-import { atom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 export const customModelsPathAtom = atomWithStorage<string | null>(
@@ -102,3 +102,26 @@ export const copyMetadataAtom = atomWithStorage<boolean>(
 );
 
 export const useNpuAtom = atomWithStorage<boolean>("useNpu", false);
+
+export const pythonPathAtom = atomWithStorage<string>("pythonPath", "python");
+
+export type NpuEnvStatus = {
+  pythonExists: boolean;
+  pythonPath: string;
+  pythonArch: string;
+  onnxruntimeExists: boolean;
+  onnxruntimeVersion: string;
+  onnxruntimePath: string;
+  qnnPluginExists: boolean;
+  qnnLibraryPath: string;
+  qnnHtpPath: string;
+  qnnProviderExists: boolean;
+  modelExists: boolean;
+  providers: string[];
+  pilExists: boolean;
+  numpyExists: boolean;
+  errorMsg: string;
+};
+
+export const npuEnvStatusAtom = atom(null) as PrimitiveAtom<NpuEnvStatus | null>;
+export const npuEnvCheckingAtom = atom(false) as PrimitiveAtom<boolean>;

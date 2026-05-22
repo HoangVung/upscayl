@@ -21,6 +21,7 @@ import { FEATURE_FLAGS } from "../common/feature-flags";
 import settings from "electron-settings";
 import pasteImage from "./commands/paste-image";
 import path from "path";
+import { checkNpuEnv } from "./commands/check-npu-env";
 
 // INITIALIZATION
 log.initialize({ preload: true });
@@ -118,6 +119,8 @@ ipcMain.handle("get-app-version", () => {
     FEATURE_FLAGS.APP_STORE_BUILD ? "MAC-APP-STORE" : "FOSS"
   }`;
 });
+
+ipcMain.handle("check-npu-env", checkNpuEnv);
 
 if (!FEATURE_FLAGS.APP_STORE_BUILD) {
   autoUpdater.on("update-downloaded", autoUpdate);

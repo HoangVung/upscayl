@@ -1,4 +1,4 @@
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import React, { useEffect, useMemo } from "react";
 import { Tooltip } from "react-tooltip";
 import { themeChange } from "theme-change";
@@ -10,6 +10,10 @@ import {
   scaleAtom,
   customWidthAtom,
   useCustomWidthAtom,
+  useNpuAtom,
+  pythonPathAtom,
+  npuEnvCheckingAtom,
+  npuEnvStatusAtom,
 } from "../../../atoms/user-settings-atom";
 import { FEATURE_FLAGS } from "@common/feature-flags";
 import { ELECTRON_COMMANDS } from "@common/electron-commands";
@@ -18,6 +22,8 @@ import { translationAtom } from "@/atoms/translations-atom";
 import { SelectImageScale } from "../settings-tab/select-image-scale";
 import SelectModelDialog from "./select-model-dialog";
 import { ImageFormat } from "@/lib/valid-formats";
+import { SwatchBookIcon } from "lucide-react";
+
 
 interface IProps {
   selectImageHandler: () => Promise<void>;
@@ -53,10 +59,66 @@ function UpscaylSteps({
   const rememberOutputFolder = useAtomValue(rememberOutputFolderAtom);
   const customWidth = useAtomValue(customWidthAtom);
   const useCustomWidth = useAtomValue(useCustomWidthAtom);
+  const useNpu = useAtomValue(useNpuAtom);
+  const pythonPath = useAtomValue(pythonPathAtom);
+  const npuEnvStatus = useAtomValue(npuEnvStatusAtom);
+  const setNpuEnvStatus = useSetAtom(npuEnvStatusAtom);
+  const npuEnvChecking = useAtomValue(npuEnvCheckingAtom);
+  const setNpuEnvChecking = useSetAtom(npuEnvCheckingAtom);
 
   const logit = useLogger();
   const { toast } = useToast();
   const t = useAtomValue(translationAtom);
+
+  useEffect(() => {
+    if (useNpu) {
+      if (batchMode) setBatchMode(false);
+      if (doubleUpscayl) setDoubleUpscayl(false);
+    }
+  }, [useNpu, batchMode, doubleUpscayl, setBatchMode, setDoubleUpscayl]);
+
+  useEffect(() => {
+    if (!useNpu || npuEnvStatus || npuEnvChecking) return;
+
+    const checkNpuEnv = async () => {
+      setNpuEnvChecking(true);
+      try {
+        const result = await window.electron.invoke("check-npu-env", {
+          pythonPath,
+        });
+        setNpuEnvStatus(result);
+      } catch (err: any) {
+        setNpuEnvStatus({
+          pythonExists: false,
+          pythonPath: "",
+          pythonArch: "",
+          onnxruntimeExists: false,
+          onnxruntimeVersion: "",
+          onnxruntimePath: "",
+          qnnProviderExists: false,
+          qnnPluginExists: false,
+          qnnLibraryPath: "",
+          qnnHtpPath: "",
+          modelExists: false,
+          providers: [],
+          pilExists: false,
+          numpyExists: false,
+          errorMsg: err.message || String(err),
+        });
+      } finally {
+        setNpuEnvChecking(false);
+      }
+    };
+
+    checkNpuEnv();
+  }, [
+    useNpu,
+    npuEnvStatus,
+    npuEnvChecking,
+    pythonPath,
+    setNpuEnvChecking,
+    setNpuEnvStatus,
+  ]);
 
   const outputHandler = async () => {
     const path = await window.electron.invoke(ELECTRON_COMMANDS.SELECT_FOLDER);
@@ -79,9 +141,9 @@ function UpscaylSteps({
     };
 
     let doubleScale = parseInt(scale) * parseInt(scale);
-    let singleScale = parseInt(scale);
+    let singleScale = useNpu ? 3 : parseInt(scale);
 
-    if (doubleUpscayl) {
+    if (doubleUpscayl && !useNpu) {
       if (useCustomWidth) {
         newDimensions.width = customWidth;
         newDimensions.height = Math.round(
@@ -106,7 +168,20 @@ function UpscaylSteps({
     }
 
     return newDimensions;
-  }, [dimensions.width, dimensions.height, doubleUpscayl, scale]);
+  }, [dimensions.width, dimensions.height, doubleUpscayl, scale, useNpu]);
+
+  const npuUnavailable =
+    useNpu &&
+    (!npuEnvStatus ||
+      !npuEnvStatus.pythonExists ||
+      !npuEnvStatus.onnxruntimeExists ||
+      !npuEnvStatus.qnnProviderExists ||
+      !npuEnvStatus.modelExists);
+
+  const npuProviderText =
+    npuEnvStatus?.providers && npuEnvStatus.providers.length > 0
+      ? npuEnvStatus.providers.join(", ")
+      : "no providers reported";
 
   return (
     <div
@@ -117,8 +192,9 @@ function UpscaylSteps({
         <input
           type="checkbox"
           className="toggle"
-          defaultChecked={batchMode}
-          onClick={() => {
+          disabled={useNpu}
+          checked={batchMode}
+          onChange={() => {
             if (!rememberOutputFolder) {
               setOutputPath("");
             }
@@ -127,11 +203,11 @@ function UpscaylSteps({
           }}
         ></input>
         <p
-          className="mr-1 inline-block cursor-help text-sm"
+          className={`mr-1 inline-block cursor-help text-sm ${useNpu ? "opacity-50" : ""}`}
           data-tooltip-id="tooltip"
-          data-tooltip-content={t("APP.BATCH_MODE.DESCRIPTION")}
+          data-tooltip-content={useNpu ? "Batch mode is not supported in NPU mode" : t("APP.BATCH_MODE.DESCRIPTION")}
         >
-          {t("APP.BATCH_MODE.TITLE")}
+          {t("APP.BATCH_MODE.TITLE")} {useNpu && "(N/A)"}
         </p>
       </div>
 
@@ -156,7 +232,30 @@ function UpscaylSteps({
           <p className="step-heading">{t("APP.MODEL_SELECTION.TITLE")}</p>
           <p className="mb-2 text-sm">{t("APP.MODEL_SELECTION.DESCRIPTION")}</p>
 
-          <SelectModelDialog />
+          {useNpu ? (
+            <button className="btn btn-primary justify-start border-border cursor-not-allowed opacity-75" disabled>
+              <SwatchBookIcon className="mr-2 h-5 w-5" />
+              Qualcomm XLSR (NPU)
+            </button>
+          ) : (
+            <SelectModelDialog />
+          )}
+
+          {useNpu && (
+            <div
+              className={`mt-3 rounded-btn border p-2 text-xs ${
+                npuEnvStatus?.qnnProviderExists
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-warning/30 bg-warning/10 text-warning"
+              }`}
+            >
+              {npuEnvChecking
+                ? "Checking Snapdragon NPU runtime..."
+                : npuEnvStatus?.qnnProviderExists
+                  ? "QNN runtime ready."
+                  : `QNN runtime missing. Available providers: ${npuProviderText}. Reinstall onnxruntime-qnn in the Python environment shown in Settings.`}
+            </div>
+          )}
         </div>
 
         {!batchMode && (
@@ -165,6 +264,7 @@ function UpscaylSteps({
               type="checkbox"
               className="checkbox"
               checked={doubleUpscayl}
+              disabled={useNpu}
               onChange={(e) => {
                 if (e.target.checked) {
                   setDoubleUpscayl(true);
@@ -174,24 +274,37 @@ function UpscaylSteps({
               }}
             />
             <p
-              className="cursor-pointer text-sm"
+              className={`cursor-pointer text-sm ${useNpu ? "opacity-50 cursor-not-allowed" : ""}`}
               onClick={(e) => {
-                setDoubleUpscayl((prev) => !prev);
+                if (!useNpu) {
+                  setDoubleUpscayl((prev) => !prev);
+                }
               }}
             >
-              {t("APP.DOUBLE_UPSCAYL.TITLE")}
+              {t("APP.DOUBLE_UPSCAYL.TITLE")} {useNpu && "(N/A)"}
             </p>
             <button
               className="badge badge-neutral badge-sm cursor-help"
               data-tooltip-id="tooltip"
-              data-tooltip-content={t("APP.DOUBLE_UPSCAYL.DESCRIPTION")}
+              data-tooltip-content={useNpu ? "Double upscaleyl is not supported in NPU mode" : t("APP.DOUBLE_UPSCAYL.DESCRIPTION")}
             >
               ?
             </button>
           </div>
         )}
 
-        <SelectImageScale scale={scale} setScale={setScale} hideInfo />
+        {useNpu ? (
+          <div className="opacity-50">
+            <p className="text-sm">
+              {t("SETTINGS.IMAGE_SCALE.TITLE")} <span className="text-xs">(3X)</span>
+            </p>
+            <p className="text-xs text-base-content/80 mt-1">
+              Snapdragon NPU mode only supports 3X scale.
+            </p>
+          </div>
+        ) : (
+          <SelectImageScale scale={scale} setScale={setScale} hideInfo />
+        )}
       </div>
 
       {/* STEP 3 */}
@@ -253,9 +366,18 @@ function UpscaylSteps({
           </p>
         )}
         <button
-          className="btn btn-secondary"
+          className={`btn btn-secondary ${npuUnavailable ? "btn-disabled opacity-60" : ""}`}
+          disabled={npuUnavailable}
+          data-tooltip-id="tooltip"
+          data-tooltip-content={
+            npuUnavailable
+              ? "QNN runtime is missing. Open Settings, reinstall onnxruntime-qnn in the shown Python environment, then refresh."
+              : undefined
+          }
           onClick={
-            progress.length > 0
+            npuUnavailable
+              ? undefined
+              : progress.length > 0
               ? () =>
                   toast({
                     description: t(
@@ -265,7 +387,9 @@ function UpscaylSteps({
               : upscaylHandler
           }
         >
-          {progress.length > 0
+          {npuEnvChecking && useNpu
+            ? "Checking NPU..."
+            : progress.length > 0
             ? t("APP.SCALE_SELECTION.IN_PROGRESS_BUTTON_TITLE")
             : t("APP.SCALE_SELECTION.START_BUTTON_TITLE")}
         </button>
