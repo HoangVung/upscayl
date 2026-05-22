@@ -6,6 +6,7 @@ import { customModelIdsAtom } from "../atoms/models-list-atom";
 import {
   batchModeAtom,
   savedOutputPathAtom,
+  outputPathSourceAtom,
   progressAtom,
   rememberOutputFolderAtom,
   userStatsAtom,
@@ -40,6 +41,8 @@ const Home = () => {
     height: null,
   });
   const setOutputPath = useSetAtom(savedOutputPathAtom);
+  const outputPathSource = useAtomValue(outputPathSourceAtom);
+  const setOutputPathSource = useSetAtom(outputPathSourceAtom);
   const rememberOutputFolder = useAtomValue(rememberOutputFolderAtom);
   const batchMode = useAtomValue(batchModeAtom);
   const [batchFolderPath, setBatchFolderPath] = useState("");
@@ -58,7 +61,7 @@ const Home = () => {
     const dirname = getDirectoryFromPath(path);
     logit("📁 Selected Image Directory: ", dirname);
     if (!FEATURE_FLAGS.APP_STORE_BUILD) {
-      if (!rememberOutputFolder) {
+      if (!rememberOutputFolder && outputPathSource !== "manual") {
         setOutputPath(dirname);
       }
     }
@@ -79,6 +82,7 @@ const Home = () => {
       setBatchFolderPath("");
       if (!rememberOutputFolder) {
         setOutputPath("");
+        setOutputPathSource("auto");
       }
     }
   };

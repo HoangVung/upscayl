@@ -1,7 +1,7 @@
 import { exec } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
-import { npuModelsPath } from "../utils/get-resource-paths";
+import { npuModelsPath, npuHelperPath } from "../utils/get-resource-paths";
 
 export interface NpuEnvCheckResult {
   pythonExists: boolean;
@@ -18,6 +18,8 @@ export interface NpuEnvCheckResult {
   providers: string[];
   pilExists: boolean;
   numpyExists: boolean;
+  nativeHelperExists: boolean;
+  nativeHelperQnnSupported: boolean;
   errorMsg: string;
 }
 
@@ -27,9 +29,7 @@ export const checkNpuEnv = async (
 ): Promise<NpuEnvCheckResult> => {
   const python = payload.pythonPath || "python";
 
-  // Using simple base64 or safe inline code execution. Since base64 is highly portable and avoids escape issues,
-  // we can use a Python base64 decoded execution.
-const pythonScript = `
+  const pythonScript = `
 import sys, platform
 ort_ok = "False"
 ort_ver = ""
@@ -86,70 +86,99 @@ print("PIL=" + pil_ok)
 print("NUMPY=" + np_ok)
 `;
 
-  // Encode to base64 to avoid any command line escaping issues on Windows cmd/powershell
   const b64Script = Buffer.from(pythonScript).toString("base64");
   const command = `"${python}" -c "import base64; exec(base64.b64decode('${b64Script}').decode('utf-8'))"`;
 
-  return new Promise((resolve) => {
-    const modelOnnxPath = join(npuModelsPath, "xlsr.onnx");
-    const modelDataPath = join(npuModelsPath, "xlsr.data");
-    const modelExists = existsSync(modelOnnxPath) && existsSync(modelDataPath);
+  const modelOnnxPath = join(npuModelsPath, "xlsr.onnx");
+  const modelDataPath = join(npuModelsPath, "xlsr.data");
+  const modelExists = existsSync(modelOnnxPath) && existsSync(modelDataPath);
+  const nativeHelperExists = existsSync(npuHelperPath);
 
-    exec(command, (error, stdout, stderr) => {
-      const result: NpuEnvCheckResult = {
-        pythonExists: false,
-        pythonPath: "",
-        pythonArch: "",
-        onnxruntimeExists: false,
-        onnxruntimeVersion: "",
-        onnxruntimePath: "",
-        qnnPluginExists: false,
-        qnnLibraryPath: "",
-        qnnHtpPath: "",
-        qnnProviderExists: false,
-        modelExists,
-        providers: [],
-        pilExists: false,
-        numpyExists: false,
-        errorMsg: "",
-      };
+  const runPythonCheck = (): Promise<Partial<NpuEnvCheckResult>> => {
+    return new Promise((resolve) => {
+      exec(command, (error, stdout, stderr) => {
+        const res: Partial<NpuEnvCheckResult> = {
+          pythonExists: false,
+          pythonPath: "",
+          pythonArch: "",
+          onnxruntimeExists: false,
+          onnxruntimeVersion: "",
+          onnxruntimePath: "",
+          qnnPluginExists: false,
+          qnnLibraryPath: "",
+          qnnHtpPath: "",
+          qnnProviderExists: false,
+          providers: [],
+          pilExists: false,
+          numpyExists: false,
+          errorMsg: "",
+        };
 
-      if (error) {
-        result.errorMsg = stderr.trim() || error.message;
-        if (error.message.includes("not found") || error.message.includes("is not recognized") || error.code === 9009) {
-          result.errorMsg = "Python not found in PATH or invalid python path.";
-        } else {
-          result.pythonExists = true;
+        if (error) {
+          res.errorMsg = stderr.trim() || error.message;
+          if (error.message.includes("not found") || error.message.includes("is not recognized") || error.code === 9009) {
+            res.errorMsg = "Python not found in PATH or invalid python path.";
+          } else {
+            res.pythonExists = true;
+          }
+          resolve(res);
+          return;
         }
-        resolve(result);
-        return;
-      }
 
-      result.pythonExists = true;
-      const lines = stdout.split(/\r?\n/);
-      for (const line of lines) {
-        const parts = line.split("=");
-        if (parts.length >= 2) {
-          const key = parts[0];
-          const val = parts.slice(1).join("=");
-          if (key === "PATH") result.pythonPath = val;
-          else if (key === "ARCH") result.pythonArch = val;
-          else if (key === "ORT_OK") result.onnxruntimeExists = val === "True";
-          else if (key === "ORT_VER") result.onnxruntimeVersion = val;
-          else if (key === "ORT_FILE") result.onnxruntimePath = val;
-          else if (key === "QNN_PLUGIN") result.qnnPluginExists = val === "True";
-          else if (key === "QNN_LIBRARY_PATH") result.qnnLibraryPath = val;
-          else if (key === "QNN_HTP_PATH") result.qnnHtpPath = val;
-          else if (key === "QNN") result.qnnProviderExists = val === "True";
-          else if (key === "PIL") result.pilExists = val === "True";
-          else if (key === "NUMPY") result.numpyExists = val === "True";
-          else if (key === "PROVIDERS") {
-            result.providers = val ? val.split(":") : [];
+        res.pythonExists = true;
+        const lines = stdout.split(/\r?\n/);
+        for (const line of lines) {
+          const parts = line.split("=");
+          if (parts.length >= 2) {
+            const key = parts[0];
+            const val = parts.slice(1).join("=");
+            if (key === "PATH") res.pythonPath = val;
+            else if (key === "ARCH") res.pythonArch = val;
+            else if (key === "ORT_OK") res.onnxruntimeExists = val === "True";
+            else if (key === "ORT_VER") res.onnxruntimeVersion = val;
+            else if (key === "ORT_FILE") res.onnxruntimePath = val;
+            else if (key === "QNN_PLUGIN") res.qnnPluginExists = val === "True";
+            else if (key === "QNN_LIBRARY_PATH") res.qnnLibraryPath = val;
+            else if (key === "QNN_HTP_PATH") res.qnnHtpPath = val;
+            else if (key === "QNN") res.qnnProviderExists = val === "True";
+            else if (key === "PIL") res.pilExists = val === "True";
+            else if (key === "NUMPY") res.numpyExists = val === "True";
+            else if (key === "PROVIDERS") {
+              res.providers = val ? val.split(":") : [];
+            }
           }
         }
-      }
-
-      resolve(result);
+        resolve(res);
+      });
     });
-  });
+  };
+
+  const runNativeCheck = (): Promise<{ nativeHelperQnnSupported: boolean }> => {
+    return new Promise((resolve) => {
+      if (!nativeHelperExists) {
+        resolve({ nativeHelperQnnSupported: false });
+        return;
+      }
+      exec(`"${npuHelperPath}" --check`, (error, stdout) => {
+        if (error) {
+          resolve({ nativeHelperQnnSupported: false });
+          return;
+        }
+        const hasQnn = stdout.includes("NPU (QNN) Support: YES");
+        resolve({ nativeHelperQnnSupported: hasQnn });
+      });
+    });
+  };
+
+  const [pyResult, nativeResult] = await Promise.all([
+    runPythonCheck(),
+    runNativeCheck(),
+  ]);
+
+  return {
+    ...pyResult,
+    modelExists,
+    nativeHelperExists,
+    nativeHelperQnnSupported: nativeResult.nativeHelperQnnSupported,
+  } as NpuEnvCheckResult;
 };

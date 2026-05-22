@@ -7,6 +7,7 @@ import {
   batchModeAtom,
   lensSizeAtom,
   savedOutputPathAtom,
+  outputPathSourceAtom,
   progressAtom,
   viewTypeAtom,
   rememberOutputFolderAtom,
@@ -64,6 +65,7 @@ const MainContent = ({
   const version = useUpscaylVersion();
 
   const [outputPath, setOutputPath] = useAtom(savedOutputPathAtom);
+  const outputPathSource = useAtomValue(outputPathSourceAtom);
   const progress = useAtomValue(progressAtom);
   const batchMode = useAtomValue(batchModeAtom);
 
@@ -154,7 +156,7 @@ const MainContent = ({
       const dirname = getDirectoryFromPath(filePath);
       logit("🗂 Setting output path: ", dirname);
       if (!FEATURE_FLAGS.APP_STORE_BUILD) {
-        if (!rememberOutputFolder) {
+        if (!rememberOutputFolder && outputPathSource !== "manual") {
           setOutputPath(dirname);
         }
       }

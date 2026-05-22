@@ -5,6 +5,7 @@ import { themeChange } from "theme-change";
 import useLogger from "../../hooks/use-logger";
 import {
   savedOutputPathAtom,
+  outputPathSourceAtom,
   progressAtom,
   rememberOutputFolderAtom,
   scaleAtom,
@@ -55,6 +56,7 @@ function UpscaylSteps({
 }: IProps) {
   const [scale, setScale] = useAtom(scaleAtom);
   const [outputPath, setOutputPath] = useAtom(savedOutputPathAtom);
+  const [outputPathSource, setOutputPathSource] = useAtom(outputPathSourceAtom);
   const [progress, setProgress] = useAtom(progressAtom);
   const rememberOutputFolder = useAtomValue(rememberOutputFolderAtom);
   const customWidth = useAtomValue(customWidthAtom);
@@ -125,8 +127,7 @@ function UpscaylSteps({
     if (path !== null) {
       logit("🗂 Setting Output Path: ", path);
       setOutputPath(path);
-    } else {
-      setOutputPath(null);
+      setOutputPathSource("manual");
     }
   };
 
@@ -197,6 +198,7 @@ function UpscaylSteps({
           onChange={() => {
             if (!rememberOutputFolder) {
               setOutputPath("");
+              setOutputPathSource("auto");
             }
             setProgress("");
             setBatchMode((oldValue) => !oldValue);

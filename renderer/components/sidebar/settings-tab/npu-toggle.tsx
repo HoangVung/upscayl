@@ -49,6 +49,8 @@ export default function NpuToggle() {
         providers: [],
         pilExists: false,
         numpyExists: false,
+        nativeHelperExists: false,
+        nativeHelperQnnSupported: false,
         errorMsg: err.message || String(err),
       };
       setStatus(errStatus);
@@ -74,6 +76,9 @@ export default function NpuToggle() {
     status.providers.some((p) => p === "CPUExecutionProvider" || p === "AzureExecutionProvider");
 
   const isNotArm64 = status?.pythonExists && status.pythonArch && !status.pythonArch.toLowerCase().includes("arm64");
+
+  const isNativeHelperReady = !!(status?.nativeHelperExists && status?.nativeHelperQnnSupported);
+  const showWarnings = status && !isNativeHelperReady;
 
   return (
     <div className="flex flex-col gap-4 border-t border-base-content/10 pt-4">
@@ -127,6 +132,23 @@ export default function NpuToggle() {
 
           <div className="rounded-btn bg-base-200 p-3 flex flex-col gap-2 text-xs">
             <p className="font-semibold text-base-content/85">Snapdragon NPU Environment Status:</p>
+
+            <div className="flex items-center justify-between">
+              <span>Native NPU Helper:</span>
+              <span className="font-semibold">
+                {status ? (status.nativeHelperExists ? (status.nativeHelperQnnSupported ? "✅ Ready" : "⚠️ Unsupported") : "❌ Missing") : "Checking..."}
+              </span>
+            </div>
+
+            {status && status.nativeHelperExists && (
+              <div className="flex flex-col gap-1 text-[10px] text-base-content/60 ml-2">
+                <div>Status: <span className={status.nativeHelperQnnSupported ? "text-success font-semibold" : "text-warning font-semibold"}>{status.nativeHelperQnnSupported ? "Native NPU runtime ready" : "QNN not supported/loaded"}</span></div>
+              </div>
+            )}
+
+            <div className="border-t border-base-content/10 my-1 pt-1">
+              <p className="font-semibold text-base-content/70">Python Environment Fallback:</p>
+            </div>
 
             <div className="flex items-center justify-between">
               <span>Python 3 Installed:</span>
@@ -184,7 +206,7 @@ export default function NpuToggle() {
               </div>
             )}
 
-            {status && status.errorMsg && !status.pythonExists && (
+            {status && status.errorMsg && !status.pythonExists && !status.nativeHelperExists && (
               <div className="mt-1 text-red-400 font-mono text-[10px] break-all">
                 Error: {status.errorMsg}
               </div>
@@ -192,7 +214,7 @@ export default function NpuToggle() {
           </div>
 
           {/* Diagnostic Warnings */}
-          {hasOnlyCpuOrAzure && (
+          {showWarnings && hasOnlyCpuOrAzure && (
             <div className="rounded-btn bg-warning/10 p-2.5 text-xs text-warning border border-warning/20 flex flex-col gap-1">
               <span className="font-semibold">⚠️ ONNX Runtime CPU version detected:</span>
               <span>Python is importing ONNX Runtime without a usable QNN plugin device. Uninstall conflict packages and reinstall `onnxruntime-qnn` in PowerShell:</span>
@@ -203,16 +225,22 @@ export default function NpuToggle() {
             </div>
           )}
 
-          {isNotArm64 && (
+          {showWarnings && isNotArm64 && (
             <div className="rounded-btn bg-error/10 p-2.5 text-xs text-error border border-error/20 flex flex-col gap-1">
               <span className="font-semibold">❌ Non-ARM64 Python detected ({status?.pythonArch}):</span>
               <span>Qualcomm QNN NPU acceleration is only supported on Windows ARM64. Please run using a native ARM64 Python installation.</span>
             </div>
           )}
 
-          {status && !status.qnnProviderExists && !hasOnlyCpuOrAzure && !isNotArm64 && (
+          {showWarnings && status && !status.qnnProviderExists && !hasOnlyCpuOrAzure && !isNotArm64 && (
             <div className="rounded-btn bg-warning/10 p-2.5 text-xs text-warning border border-warning/20">
               ⚠️ QNNExecutionProvider is unavailable. Check that your environment is running native Windows ARM64 and the Qualcomm QNN SDK DLLs are set up.
+            </div>
+          )}
+
+          {status?.nativeHelperExists && !status?.nativeHelperQnnSupported && (
+            <div className="rounded-btn bg-warning/10 p-2.5 text-xs text-warning border border-warning/20">
+              ⚠️ Native NPU helper found, but QNN Execution Provider failed to load. Check that Qualcomm drivers are updated and native QNN runtime DLLs are present.
             </div>
           )}
         </div>

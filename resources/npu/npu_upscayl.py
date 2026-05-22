@@ -195,6 +195,7 @@ def upscale_image_xlsr(session, img: Image.Image, overlap: int = 32) -> Image.Im
             
             # Postprocess: NCHW -> HWC
             tile_out = np.squeeze(tile_out, axis=0)
+            tile_out = tile_out[::-1, :, :] # Swap BGR to RGB
             tile_out = np.transpose(tile_out, (1, 2, 0)) # Shape: (512, 512, 3), dtype: uint8
             
             # Resize from 512x512 to 384x384 (scale factor 3)

@@ -114,33 +114,37 @@ const Sidebar = ({
         setProgress("Checking NPU environment...");
         try {
           const checkResult = await window.electron.invoke("check-npu-env", { pythonPath });
-          if (!checkResult.pythonExists) {
-            toast({
-              title: "NPU Execution Failed",
-              description: "Python is not installed or the path is invalid. Please configure Python Path in Settings.",
-            });
-            setProgress("");
-            return;
-          }
-          if (!checkResult.onnxruntimeExists) {
-            toast({
-              title: "NPU Execution Failed",
-              description: "onnxruntime-qnn, Pillow, or numpy is missing. Please run: pip install onnxruntime-qnn Pillow numpy",
-            });
-            setProgress("");
-            return;
-          }
-          if (!checkResult.qnnProviderExists) {
-            const providers =
-              checkResult.providers && checkResult.providers.length > 0
-                ? checkResult.providers.join(", ")
-                : "no providers reported";
-            toast({
-              title: "NPU Execution Failed",
-              description: `Python ARM64 found, but this ONNX Runtime build only exposes ${providers}. Reinstall onnxruntime-qnn in the Python environment shown in Settings.`,
-            });
-            setProgress("");
-            return;
+          const isNativeHelperReady = !!(checkResult.nativeHelperExists && checkResult.nativeHelperQnnSupported);
+
+          if (!isNativeHelperReady) {
+            if (!checkResult.pythonExists) {
+              toast({
+                title: "NPU Execution Failed",
+                description: "Neither native helper nor Python runtime is available. Please configure Python Path in Settings or check native DLLs.",
+              });
+              setProgress("");
+              return;
+            }
+            if (!checkResult.onnxruntimeExists) {
+              toast({
+                title: "NPU Execution Failed",
+                description: "onnxruntime-qnn, Pillow, or numpy is missing. Please run: pip install onnxruntime-qnn Pillow numpy",
+              });
+              setProgress("");
+              return;
+            }
+            if (!checkResult.qnnProviderExists) {
+              const providers =
+                checkResult.providers && checkResult.providers.length > 0
+                  ? checkResult.providers.join(", ")
+                  : "no providers reported";
+              toast({
+                title: "NPU Execution Failed",
+                description: `Python ARM64 found, but this ONNX Runtime build only exposes ${providers}. Reinstall onnxruntime-qnn in the Python environment shown in Settings.`,
+              });
+              setProgress("");
+              return;
+            }
           }
           if (!checkResult.modelExists) {
             toast({

@@ -29,4 +29,8 @@ const npuModelsPath = isDev
   ? resolve(join(appRootDir, "resources", "npu", "models"))
   : resolve(join(dirname(appRootDir), "npu", "models"));
 
-export { execPath, modelsPath, npuScriptPath, npuModelsPath };
+const npuHelperPath = isDev
+  ? resolve(join(appRootDir, "resources", "npu", "bin", "win-arm64", "upscayl-npu-helper.exe"))
+  : resolve(join(dirname(appRootDir), "npu", "bin", "win-arm64", "upscayl-npu-helper.exe"));
+
+export { execPath, modelsPath, npuScriptPath, npuModelsPath, npuHelperPath };

@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
-import { npuScriptPath } from "./get-resource-paths";
+import { existsSync } from "fs";
+import { npuScriptPath, npuHelperPath } from "./get-resource-paths";
 
 export const spawnNpuUpscayl = (
   args: {
@@ -14,27 +15,50 @@ export const spawnNpuUpscayl = (
   },
   logit: (...args: any) => void,
 ) => {
-  const command = [
-    npuScriptPath,
-    "-i",
-    args.inputPath,
-    "-o",
-    args.outputPath,
-    "-m",
-    args.modelPath,
-    "-s",
-    args.scale,
-    "-f",
-    args.format,
-    "-t",
-    args.tileSize ? args.tileSize.toString() : "128", // always 128 for XLSR
-    "-c",
-    args.compression || "0",
-  ];
+  const useNative = existsSync(npuHelperPath);
+  let spawnCmd: string;
+  let command: string[];
 
-  logit("📢 NPU Upscayl Command: ", command);
+  if (useNative) {
+    spawnCmd = npuHelperPath;
+    command = [
+      "-i",
+      args.inputPath,
+      "-o",
+      args.outputPath,
+      "-m",
+      args.modelPath,
+      "-s",
+      args.scale,
+      "-f",
+      args.format,
+      "-c",
+      args.compression || "0",
+    ];
+  } else {
+    spawnCmd = args.pythonPath || "python";
+    command = [
+      npuScriptPath,
+      "-i",
+      args.inputPath,
+      "-o",
+      args.outputPath,
+      "-m",
+      args.modelPath,
+      "-s",
+      args.scale,
+      "-f",
+      args.format,
+      "-t",
+      args.tileSize ? args.tileSize.toString() : "128",
+      "-c",
+      args.compression || "0",
+    ];
+  }
 
-  const spawnedProcess = spawn(args.pythonPath || "python", command, {
+  logit("📢 NPU Upscayl Command: ", [spawnCmd, ...command]);
+
+  const spawnedProcess = spawn(spawnCmd, command, {
     cwd: undefined,
     detached: false,
   });

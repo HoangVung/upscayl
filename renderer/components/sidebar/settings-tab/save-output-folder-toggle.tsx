@@ -2,14 +2,16 @@ import { translationAtom } from "@/atoms/translations-atom";
 import {
   savedOutputPathAtom,
   rememberOutputFolderAtom,
+  outputPathSourceAtom,
 } from "@/atoms/user-settings-atom";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 
 export function SaveOutputFolderToggle() {
   const [outputPath, setOutputPath] = useAtom(savedOutputPathAtom);
   const [rememberOutputFolder, setRememberOutputFolder] = useAtom(
     rememberOutputFolderAtom,
   );
+  const setOutputPathSource = useSetAtom(outputPathSourceAtom);
   const t = useAtomValue(translationAtom);
 
   return (
@@ -30,6 +32,7 @@ export function SaveOutputFolderToggle() {
           setRememberOutputFolder((oldValue) => {
             if (oldValue === true) {
               setOutputPath("");
+              setOutputPathSource("auto");
             }
             return !oldValue;
           });

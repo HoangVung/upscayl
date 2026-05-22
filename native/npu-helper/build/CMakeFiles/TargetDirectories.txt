@@ -1,0 +1,3 @@
+D:/GitHub/upscayl/native/npu-helper/build/CMakeFiles/upscayl-npu-helper.dir
+D:/GitHub/upscayl/native/npu-helper/build/CMakeFiles/ALL_BUILD.dir
+D:/GitHub/upscayl/native/npu-helper/build/CMakeFiles/ZERO_CHECK.dir

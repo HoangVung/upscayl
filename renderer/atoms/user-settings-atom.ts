@@ -32,6 +32,11 @@ export const savedOutputPathAtom = atomWithStorage<string | null>(
   null,
 );
 
+export const outputPathSourceAtom = atomWithStorage<"auto" | "manual">(
+  "outputPathSource",
+  "auto",
+);
+
 export const progressAtom = atom<string>("");
 
 export const rememberOutputFolderAtom = atomWithStorage<boolean>(
