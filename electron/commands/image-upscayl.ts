@@ -11,6 +11,7 @@ import { getSingleImageArguments } from "../utils/get-arguments";
 import logit from "../utils/logit";
 import slash from "../utils/slash";
 import { spawnUpscayl } from "../utils/spawn-upscayl";
+import { spawnNpuUpscayl } from "../utils/spawn-npu-upscayl";
 import { parse } from "path";
 import { getMainWindow } from "../main-window";
 import { ImageUpscaylPayload } from "../../common/types/types";
@@ -101,25 +102,46 @@ const imageUpscayl = async (event, payload: ImageUpscaylPayload) => {
         tileSize,
       }),
     );
-    const upscayl = spawnUpscayl(
-      getSingleImageArguments({
-        inputDir: decodeURIComponent(inputDir),
-        fileNameWithExt: decodeURIComponent(fileNameWithExt),
-        outFile,
-        modelsPath: isDefaultModel
-          ? modelsPath
-          : (savedCustomModelsPath ?? modelsPath),
-        model,
-        scale,
-        gpuId,
-        saveImageAs,
-        customWidth,
-        compression,
-        tileSize,
-        ttaMode,
-      }),
-      logit,
-    );
+    const useNpu = payload.useNpu;
+
+    // Choose between NPU (Python/ONNX) and standard (upscayl-bin/ncnn) upscaling
+    const upscayl = useNpu
+      ? spawnNpuUpscayl(
+          {
+            inputPath: decodeURIComponent(imagePath),
+            outputPath: outFile,
+            modelPath: (isDefaultModel
+              ? modelsPath
+              : (savedCustomModelsPath ?? modelsPath)) +
+              slash +
+              model +
+              ".onnx",
+            scale,
+            format: saveImageAs,
+            tileSize,
+            compression,
+          },
+          logit,
+        )
+      : spawnUpscayl(
+          getSingleImageArguments({
+            inputDir: decodeURIComponent(inputDir),
+            fileNameWithExt: decodeURIComponent(fileNameWithExt),
+            outFile,
+            modelsPath: isDefaultModel
+              ? modelsPath
+              : (savedCustomModelsPath ?? modelsPath),
+            model,
+            scale,
+            gpuId,
+            saveImageAs,
+            customWidth,
+            compression,
+            tileSize,
+            ttaMode,
+          }),
+          logit,
+        );
 
     setChildProcesses(upscayl);
 

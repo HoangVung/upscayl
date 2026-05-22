@@ -100,3 +100,5 @@ export const copyMetadataAtom = atomWithStorage<boolean>(
   "copyMetadata",
   false,
 );
+
+export const useNpuAtom = atomWithStorage<boolean>("useNpu", false);

@@ -26,6 +26,7 @@ import AutoUpdateToggle from "./auto-update-toggle";
 import TTAModeToggle from "./tta-mode-toggle";
 import SystemInfo from "./system-info";
 import CopyMetadataToggle from "./copy-metadata-toggle";
+import NpuToggle from "./npu-toggle";
 
 interface IProps {
   batchMode: boolean;
@@ -215,6 +216,9 @@ function SettingsTab({
       />
 
       <TTAModeToggle />
+
+      {/* NPU TOGGLE */}
+      <NpuToggle />
 
       {/* RESET SETTINGS */}
       <ResetSettingsButton />
