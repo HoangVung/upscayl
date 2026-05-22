@@ -46,6 +46,7 @@ const Home = () => {
   const rememberOutputFolder = useAtomValue(rememberOutputFolderAtom);
   const batchMode = useAtomValue(batchModeAtom);
   const [batchFolderPath, setBatchFolderPath] = useState("");
+  const [batchImagePaths, setBatchImagePaths] = useState<string[]>([]);
   const [upscaledBatchFolderPath, setUpscaledBatchFolderPath] = useState("");
   const setProgress = useSetAtom(progressAtom);
   const [doubleUpscaylCounter, setDoubleUpscaylCounter] = useState(0);
@@ -53,9 +54,12 @@ const Home = () => {
   const setUserStats = useSetAtom(userStatsAtom);
 
   const selectImageHandler = async () => {
-    resetImagePaths();
     const path = await window.electron.invoke(ELECTRON_COMMANDS.SELECT_FILE);
-    if (path === null) return;
+    if (path === null) {
+      logit("🚫 File selection cancelled");
+      return;
+    }
+    resetImagePaths();
     logit("🖼 Selected Image Path: ", path);
     setImagePath(path);
     const dirname = getDirectoryFromPath(path);
@@ -69,9 +73,9 @@ const Home = () => {
   };
 
   const selectFolderHandler = async () => {
-    resetImagePaths();
     const path = await window.electron.invoke(ELECTRON_COMMANDS.SELECT_FOLDER);
     if (path !== null) {
+      resetImagePaths();
       logit("🖼 Selected Folder Path: ", path);
       setBatchFolderPath(path);
       if (!rememberOutputFolder) {
@@ -79,10 +83,23 @@ const Home = () => {
       }
     } else {
       logit("🚫 Folder selection cancelled");
-      setBatchFolderPath("");
-      if (!rememberOutputFolder) {
-        setOutputPath("");
-        setOutputPathSource("auto");
+    }
+  };
+
+  const selectImagesHandler = async () => {
+    const paths = await window.electron.invoke(ELECTRON_COMMANDS.SELECT_FILES);
+    if (paths === null || !Array.isArray(paths) || paths.length === 0) {
+      logit("🚫 Multi-file selection cancelled");
+      return;
+    }
+    resetImagePaths();
+    logit("🖼 Selected Multi-Image Paths: ", paths);
+    setBatchImagePaths(paths);
+    const dirname = getDirectoryFromPath(paths[0]);
+    logit("📁 Selected Multi-Image Directory: ", dirname);
+    if (!FEATURE_FLAGS.APP_STORE_BUILD) {
+      if (!rememberOutputFolder && outputPathSource !== "manual") {
+        setOutputPath(dirname);
       }
     }
   };
@@ -327,6 +344,7 @@ const Home = () => {
     setUpscaledImagePath("");
     setBatchFolderPath("");
     setUpscaledBatchFolderPath("");
+    setBatchImagePaths([]);
   };
 
   if (isLoading) {
@@ -345,9 +363,12 @@ const Home = () => {
         dimensions={dimensions}
         setUpscaledImagePath={setUpscaledImagePath}
         batchFolderPath={batchFolderPath}
+        batchImagePaths={batchImagePaths}
+        setBatchImagePaths={setBatchImagePaths}
         setUpscaledBatchFolderPath={setUpscaledBatchFolderPath}
         selectImageHandler={selectImageHandler}
         selectFolderHandler={selectFolderHandler}
+        selectImagesHandler={selectImagesHandler}
       />
       <MainContent
         imagePath={imagePath}
@@ -357,7 +378,11 @@ const Home = () => {
         validateImagePath={validateImagePath}
         selectFolderHandler={selectFolderHandler}
         selectImageHandler={selectImageHandler}
+        selectImagesHandler={selectImagesHandler}
         batchFolderPath={batchFolderPath}
+        setBatchFolderPath={setBatchFolderPath}
+        batchImagePaths={batchImagePaths}
+        setBatchImagePaths={setBatchImagePaths}
         upscaledImagePath={upscaledImagePath}
         doubleUpscaylCounter={doubleUpscaylCounter}
         setDimensions={setDimensions}

@@ -49,14 +49,19 @@ import getDirectoryFromPath from "@common/get-directory-from-path";
 const Sidebar = ({
   setUpscaledImagePath,
   batchFolderPath,
+  batchImagePaths,
+  setBatchImagePaths,
   setUpscaledBatchFolderPath,
   dimensions,
   imagePath,
   selectImageHandler,
   selectFolderHandler,
+  selectImagesHandler,
 }: {
   setUpscaledImagePath: React.Dispatch<React.SetStateAction<string>>;
   batchFolderPath: string;
+  batchImagePaths: string[];
+  setBatchImagePaths: React.Dispatch<React.SetStateAction<string[]>>;
   setUpscaledBatchFolderPath: React.Dispatch<React.SetStateAction<string>>;
   dimensions: {
     width: number | null;
@@ -65,6 +70,7 @@ const Sidebar = ({
   imagePath: string;
   selectImageHandler: () => Promise<void>;
   selectFolderHandler: () => Promise<void>;
+  selectImagesHandler: () => Promise<void>;
 }) => {
   const t = useTranslation();
   const logit = useLogger();
@@ -105,10 +111,20 @@ const Sidebar = ({
     logit("🔄 Resetting Upscaled Image Path");
     setUpscaledImagePath("");
     setUpscaledBatchFolderPath("");
-    if (imagePath !== "" || batchFolderPath !== "") {
+    if (imagePath !== "" || batchFolderPath !== "" || batchImagePaths.length > 0) {
+      if (batchMode && !useNpu && batchImagePaths.length > 0) {
+        toast({
+          title: "Batch Mode Error",
+          description: "Selecting multiple images is only supported when Snapdragon NPU is enabled. Please select a folder instead.",
+        });
+        return;
+      }
+
       const resolvedOutputPath =
         outputPath ||
-        (batchMode ? batchFolderPath : getDirectoryFromPath(imagePath));
+        (batchMode
+          ? (batchFolderPath || (batchImagePaths.length > 0 ? getDirectoryFromPath(batchImagePaths[0]) : ""))
+          : getDirectoryFromPath(imagePath));
 
       if (useNpu) {
         setProgress("Checking NPU environment...");
@@ -201,6 +217,7 @@ const Sidebar = ({
           ELECTRON_COMMANDS.FOLDER_UPSCAYL,
           {
             batchFolderPath,
+            batchImagePaths,
             outputPath: resolvedOutputPath,
             model: selectedModelId,
             gpuId: gpuId.length === 0 ? null : gpuId,
@@ -214,6 +231,7 @@ const Sidebar = ({
             ttaMode,
             copyMetadata,
             useNpu,
+            pythonPath,
           },
         );
         setUserStats((prev) => ({
@@ -294,10 +312,13 @@ const Sidebar = ({
           <UpscaylSteps
             selectImageHandler={selectImageHandler}
             selectFolderHandler={selectFolderHandler}
+            selectImagesHandler={selectImagesHandler}
             upscaylHandler={upscaylHandler}
             batchMode={batchMode}
             setBatchMode={setBatchMode}
             imagePath={imagePath}
+            batchFolderPath={batchFolderPath}
+            batchImagePaths={batchImagePaths}
             doubleUpscayl={doubleUpscayl}
             setDoubleUpscayl={setDoubleUpscayl}
             dimensions={dimensions}

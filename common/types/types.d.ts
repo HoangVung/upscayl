@@ -40,7 +40,8 @@ export type DoubleUpscaylPayload = {
 };
 
 export type BatchUpscaylPayload = {
-  batchFolderPath: string;
+  batchFolderPath?: string;
+  batchImagePaths?: string[];
   outputPath: string;
   model: string;
   gpuId: string;
@@ -54,4 +55,5 @@ export type BatchUpscaylPayload = {
   ttaMode: boolean;
   copyMetadata: boolean;
   useNpu: boolean;
+  pythonPath?: string;
 };

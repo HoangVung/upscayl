@@ -1,5 +1,6 @@
 const ELECTRON_COMMANDS = {
   SELECT_FILE: "Select a File",
+  SELECT_FILES: "Select Files",
   SELECT_FOLDER: "Select a Folder",
   UPSCAYL: "Upscale the Image",
   UPSCAYL_DONE: "Upscaling Done",

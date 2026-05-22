@@ -11,6 +11,7 @@ import {
   progressAtom,
   viewTypeAtom,
   rememberOutputFolderAtom,
+  useNpuAtom,
 } from "../../atoms/user-settings-atom";
 import { useToast } from "@/components/ui/use-toast";
 import { sanitizePath } from "@common/sanitize-path";
@@ -35,8 +36,12 @@ type MainContentProps = {
   validateImagePath: (path: string) => void;
   selectFolderHandler: () => void;
   selectImageHandler: () => void;
+  selectImagesHandler: () => void;
   upscaledImagePath: string;
   batchFolderPath: string;
+  setBatchFolderPath: React.Dispatch<React.SetStateAction<string>>;
+  batchImagePaths: string[];
+  setBatchImagePaths: React.Dispatch<React.SetStateAction<string[]>>;
   doubleUpscaylCounter: number;
   setDimensions: React.Dispatch<
     React.SetStateAction<{
@@ -54,8 +59,12 @@ const MainContent = ({
   validateImagePath,
   selectFolderHandler,
   selectImageHandler,
+  selectImagesHandler,
   upscaledImagePath,
   batchFolderPath,
+  setBatchFolderPath,
+  batchImagePaths,
+  setBatchImagePaths,
   doubleUpscaylCounter,
   setDimensions,
 }: MainContentProps) => {
@@ -68,6 +77,7 @@ const MainContent = ({
   const outputPathSource = useAtomValue(outputPathSourceAtom);
   const progress = useAtomValue(progressAtom);
   const batchMode = useAtomValue(batchModeAtom);
+  const useNpu = useAtomValue(useNpuAtom);
 
   const viewType = useAtomValue(viewTypeAtom);
   const lensSize = useAtomValue(lensSizeAtom);
@@ -84,7 +94,9 @@ const MainContent = ({
       return imagePath.length === 0 && upscaledImagePath.length === 0;
     } else {
       return (
-        batchFolderPath.length === 0 && upscaledBatchFolderPath.length === 0
+        batchFolderPath.length === 0 &&
+        batchImagePaths.length === 0 &&
+        upscaledBatchFolderPath.length === 0
       );
     }
   }, [
@@ -92,6 +104,7 @@ const MainContent = ({
     imagePath,
     upscaledImagePath,
     batchFolderPath,
+    batchImagePaths,
     upscaledBatchFolderPath,
   ]);
 
@@ -110,7 +123,6 @@ const MainContent = ({
   };
 
   const openFolderHandler = (e) => {
-    const logit = useLogger();
     logit("📂 OPEN_FOLDER: ", upscaledBatchFolderPath);
     window.electron.send(
       ELECTRON_COMMANDS.OPEN_FOLDER,
@@ -123,7 +135,7 @@ const MainContent = ({
     [imagePath],
   );
 
-  const handleDrop = (e) => {
+  const handleDrop = async (e) => {
     e.preventDefault();
     resetImagePaths();
     if (
@@ -137,30 +149,85 @@ const MainContent = ({
       });
       return;
     }
-    const type = e.dataTransfer.items[0].type;
-    const filePath = e.dataTransfer.files[0].path;
-    const extension = e.dataTransfer.files[0].name.split(".").at(-1);
-    logit("⤵️ Dropped file: ", JSON.stringify({ type, filePath, extension }));
-    if (
-      !type.includes("image") ||
-      !VALID_IMAGE_FORMATS.includes(extension.toLowerCase())
-    ) {
-      logit("🚫 Invalid file dropped");
-      toast({
-        title: t("ERRORS.INVALID_IMAGE_ERROR.TITLE"),
-        description: t("ERRORS.INVALID_IMAGE_ERROR.ADDITIONAL_DESCRIPTION"),
-      });
-    } else {
-      logit("🖼 Setting image path: ", filePath);
-      setImagePath(filePath);
-      const dirname = getDirectoryFromPath(filePath);
-      logit("🗂 Setting output path: ", dirname);
-      if (!FEATURE_FLAGS.APP_STORE_BUILD) {
-        if (!rememberOutputFolder && outputPathSource !== "manual") {
-          setOutputPath(dirname);
+
+    if (batchMode) {
+      if (e.dataTransfer.files.length === 1) {
+        const filePath = e.dataTransfer.files[0].path;
+        const isDir = await window.electron.invoke("is-directory", filePath);
+        if (isDir) {
+          logit("📂 Setting batch folder path via drop: ", filePath);
+          setBatchFolderPath(filePath);
+          const dirname = filePath;
+          logit("🗂 Setting output path: ", dirname);
+          if (!FEATURE_FLAGS.APP_STORE_BUILD) {
+            if (!rememberOutputFolder && outputPathSource !== "manual") {
+              setOutputPath(dirname);
+            }
+          }
+          return;
         }
       }
-      validateImagePath(filePath);
+
+      if (!useNpu) {
+        toast({
+          title: "Batch Mode Error",
+          description: "Selecting multiple images is only supported when Snapdragon NPU is enabled. Please drop a folder instead.",
+        });
+        return;
+      }
+
+      const paths: string[] = [];
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        const file = e.dataTransfer.files[i];
+        const extension = file.name.split(".").at(-1)?.toLowerCase();
+        if (extension && VALID_IMAGE_FORMATS.includes(extension as ImageFormat)) {
+          paths.push(file.path);
+        }
+      }
+
+      if (paths.length === 0) {
+        logit("🚫 No valid images dropped");
+        toast({
+          title: t("ERRORS.INVALID_IMAGE_ERROR.TITLE"),
+          description: t("ERRORS.INVALID_IMAGE_ERROR.ADDITIONAL_DESCRIPTION"),
+        });
+      } else {
+        logit("🖼 Setting batch image paths: ", paths);
+        setBatchImagePaths(paths);
+        const dirname = getDirectoryFromPath(paths[0]);
+        logit("🗂 Setting output path: ", dirname);
+        if (!FEATURE_FLAGS.APP_STORE_BUILD) {
+          if (!rememberOutputFolder && outputPathSource !== "manual") {
+            setOutputPath(dirname);
+          }
+        }
+      }
+    } else {
+      const type = e.dataTransfer.items[0].type;
+      const filePath = e.dataTransfer.files[0].path;
+      const extension = e.dataTransfer.files[0].name.split(".").at(-1);
+      logit("⤵️ Dropped file: ", JSON.stringify({ type, filePath, extension }));
+      if (
+        !type.includes("image") ||
+        !VALID_IMAGE_FORMATS.includes(extension.toLowerCase())
+      ) {
+        logit("🚫 Invalid file dropped");
+        toast({
+          title: t("ERRORS.INVALID_IMAGE_ERROR.TITLE"),
+          description: t("ERRORS.INVALID_IMAGE_ERROR.ADDITIONAL_DESCRIPTION"),
+        });
+      } else {
+        logit("🖼 Setting image path: ", filePath);
+        setImagePath(filePath);
+        const dirname = getDirectoryFromPath(filePath);
+        logit("🗂 Setting output path: ", dirname);
+        if (!FEATURE_FLAGS.APP_STORE_BUILD) {
+          if (!rememberOutputFolder && outputPathSource !== "manual") {
+            setOutputPath(dirname);
+          }
+        }
+        validateImagePath(filePath);
+      }
     }
   };
 
@@ -314,6 +381,18 @@ const MainContent = ({
               {t("APP.PROGRESS.BATCH.SELECTED_FOLDER_TITLE")}
             </span>{" "}
             {batchFolderPath}
+          </p>
+        )}
+
+      {/* BATCH UPSCALE SHOW SELECTED IMAGES */}
+      {batchMode &&
+        upscaledBatchFolderPath.length === 0 &&
+        batchImagePaths.length > 0 && (
+          <p className="select-none text-base-content text-center">
+            <span className="font-bold">
+              Selected Images:
+            </span>{" "}
+            {batchImagePaths.length} file{batchImagePaths.length > 1 ? "s" : ""}
           </p>
         )}
       {/* BATCH UPSCALE DONE INFO */}

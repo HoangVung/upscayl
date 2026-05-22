@@ -125,6 +125,8 @@ export type NpuEnvStatus = {
   providers: string[];
   pilExists: boolean;
   numpyExists: boolean;
+  nativeHelperExists: boolean;
+  nativeHelperQnnSupported: boolean;
   errorMsg: string;
 };
 

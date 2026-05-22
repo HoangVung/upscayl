@@ -2,12 +2,14 @@ import prepareNext from "electron-next";
 import { autoUpdater } from "electron-updater";
 import log from "electron-log";
 import { app, ipcMain, protocol } from "electron";
+import fs from "fs";
 import { ELECTRON_COMMANDS } from "../common/electron-commands";
 import logit from "./utils/logit";
 import openFolder from "./commands/open-folder";
 import stop from "./commands/stop";
 import selectFolder from "./commands/select-folder";
 import selectFile from "./commands/select-file";
+import selectFiles from "./commands/select-files";
 import getModelsList from "./commands/get-models-list";
 import customModelsSelect from "./commands/custom-models-select";
 import imageUpscayl from "./commands/image-upscayl";
@@ -89,6 +91,16 @@ ipcMain.on(ELECTRON_COMMANDS.OPEN_FOLDER, openFolder);
 ipcMain.handle(ELECTRON_COMMANDS.SELECT_FOLDER, selectFolder);
 
 ipcMain.handle(ELECTRON_COMMANDS.SELECT_FILE, selectFile);
+
+ipcMain.handle(ELECTRON_COMMANDS.SELECT_FILES, selectFiles);
+
+ipcMain.handle("is-directory", async (event, path: string) => {
+  try {
+    return fs.statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+});
 
 ipcMain.on(ELECTRON_COMMANDS.GET_MODELS_LIST, getModelsList);
 

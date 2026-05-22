@@ -29,10 +29,13 @@ import { SwatchBookIcon } from "lucide-react";
 interface IProps {
   selectImageHandler: () => Promise<void>;
   selectFolderHandler: () => Promise<void>;
+  selectImagesHandler: () => Promise<void>;
   upscaylHandler: () => Promise<void>;
   batchMode: boolean;
   setBatchMode: React.Dispatch<React.SetStateAction<boolean>>;
   imagePath: string;
+  batchFolderPath: string;
+  batchImagePaths: string[];
   doubleUpscayl: boolean;
   setDoubleUpscayl: React.Dispatch<React.SetStateAction<boolean>>;
   dimensions: {
@@ -46,10 +49,13 @@ interface IProps {
 function UpscaylSteps({
   selectImageHandler,
   selectFolderHandler,
+  selectImagesHandler,
   upscaylHandler,
   batchMode,
   setBatchMode,
   imagePath,
+  batchFolderPath,
+  batchImagePaths,
   doubleUpscayl,
   setDoubleUpscayl,
   dimensions,
@@ -74,10 +80,9 @@ function UpscaylSteps({
 
   useEffect(() => {
     if (useNpu) {
-      if (batchMode) setBatchMode(false);
       if (doubleUpscayl) setDoubleUpscayl(false);
     }
-  }, [useNpu, batchMode, doubleUpscayl, setBatchMode, setDoubleUpscayl]);
+  }, [useNpu, doubleUpscayl, setDoubleUpscayl]);
 
   useEffect(() => {
     if (!useNpu || npuEnvStatus || npuEnvChecking) return;
@@ -105,6 +110,8 @@ function UpscaylSteps({
           providers: [],
           pilExists: false,
           numpyExists: false,
+          nativeHelperExists: false,
+          nativeHelperQnnSupported: false,
           errorMsg: err.message || String(err),
         });
       } finally {
@@ -193,7 +200,6 @@ function UpscaylSteps({
         <input
           type="checkbox"
           className="toggle"
-          disabled={useNpu}
           checked={batchMode}
           onChange={() => {
             if (!rememberOutputFolder) {
@@ -205,27 +211,44 @@ function UpscaylSteps({
           }}
         ></input>
         <p
-          className={`mr-1 inline-block cursor-help text-sm ${useNpu ? "opacity-50" : ""}`}
-          data-tooltip-id="tooltip"
-          data-tooltip-content={useNpu ? "Batch mode is not supported in NPU mode" : t("APP.BATCH_MODE.DESCRIPTION")}
+          className="mr-1 inline-block text-sm"
         >
-          {t("APP.BATCH_MODE.TITLE")} {useNpu && "(N/A)"}
+          Batch Upscayl
         </p>
       </div>
 
       {/* STEP 1 */}
-      <div className="animate-step-in">
+      <div className="animate-step-in flex flex-col gap-2">
         <p className="step-heading">{t("APP.FILE_SELECTION.TITLE")}</p>
-        <button
-          className="btn btn-primary"
-          onClick={!batchMode ? selectImageHandler : selectFolderHandler}
-          data-tooltip-id="tooltip"
-          data-tooltip-content={imagePath}
-        >
-          {batchMode
-            ? t("APP.FILE_SELECTION.BATCH_MODE_TYPE")
-            : t("APP.FILE_SELECTION.SINGLE_MODE_TYPE")}
-        </button>
+        {batchMode ? (
+          <div className="flex flex-col gap-2">
+            <button
+              className="btn btn-primary justify-start"
+              onClick={selectFolderHandler}
+              data-tooltip-id="tooltip"
+              data-tooltip-content={batchFolderPath}
+            >
+              Select Folder
+            </button>
+            <button
+              className="btn btn-primary justify-start"
+              onClick={selectImagesHandler}
+              data-tooltip-id="tooltip"
+              data-tooltip-content={batchImagePaths?.join(", ")}
+            >
+              Select Images
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-primary justify-start"
+            onClick={selectImageHandler}
+            data-tooltip-id="tooltip"
+            data-tooltip-content={imagePath}
+          >
+            {t("APP.FILE_SELECTION.SINGLE_MODE_TYPE")}
+          </button>
+        )}
       </div>
 
       {/* STEP 2 */}
